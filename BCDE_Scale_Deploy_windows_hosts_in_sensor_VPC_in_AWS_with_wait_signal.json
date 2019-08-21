@@ -1,0 +1,301 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Acalvio BCDE Hosts Deployment",
+  "Metadata": {
+	"Comment" : "Author: Vivek Stalin (vivek@acalvio.com). Copyright (c) 2019 Acalvio Technologies. - All Rights Reserved",  
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Network Configurations"
+          },
+          "Parameters": [
+      			"VPCCIDR",
+      			"SubnetCIDR",
+				"DefaultSGofVPC",
+				"DefaultSGofSensor",
+				"S3bucketname",
+				"BCDEFilename",
+				"InstanceCount"
+          ]
+        },	
+		{
+    		"Label": {
+                "default": "Instance SSH Settings"
+              },
+              "Parameters": [
+          		  "KeyName"
+          		  ]
+        }
+      ],
+      "ParameterLabels": { 
+  		  "VPCCIDR": {
+            "default": "Service VPC"
+			},
+  		  "SubnetCIDR": {
+            "default": "BCDE Host Management Subnet"
+			},
+			 "DefaultSGofVPC": {
+            "default": "Default Security Group ID of the VPC"
+          },
+		 "DefaultSGofSensor": {
+            "default": "Default Security Group ID of the Sensor"
+          },
+			"S3bucketname":{
+			"default": "Your S3 bucket name"
+			},
+			"BCDEFilename":{
+			"default": "BCDE zip file name"
+			},
+			"InstanceCount":{
+			"default": "No of instances required"
+			},
+		 "KeyName":{
+		   "default": "Your EC2 Key Name"
+		 }
+        }
+	 }
+  },	
+  "Parameters": {
+   
+	"VPCCIDR": {
+      "Description": "VPCID of your existing Service VPC where AWS Sensor is running",
+      "Type": "AWS::EC2::VPC::Id",
+	  "ConstraintDescription": "must be the ID of an existing VPC"
+    },
+	
+	 "SubnetCIDR": {
+      "Description": "Subnet-ID of your existing Subnet where AWS Sensor is running",
+	  "Type": "AWS::EC2::Subnet::Id",
+	   "ConstraintDescription": "must be the ID of an existing Subnet"
+     },
+	 "DefaultSGofVPC": {
+			  "Description": "Security Group ID attached to the Above chosen VPC. (Eg: sg-2c5a1357)",
+			  "Type": "AWS::EC2::SecurityGroup::Id",
+			  "ConstraintDescription": "Must be valid Security Group ID"
+			},
+	"DefaultSGofSensor": {
+			  "Description": "Security Group ID attached to the Sensor. (Eg: sg-2c5a1357)",
+			  "Type": "AWS::EC2::SecurityGroup::Id",
+			  "ConstraintDescription": "Must be valid Security Group ID"
+			},
+	 
+	"S3bucketname": {
+	"Description" : "Name of the S3 bucket where the BCDE file is uploaded",
+	"Type": "String",
+	"MinLength":"1",
+	"ConstraintDescription": "must be a string"
+	},
+	"BCDEFilename": {
+	"Description" : "Name of the BCDE file name with extension.(Eg: bcde.zip)",
+	"Type": "String",
+	"MinLength":"1",
+	"Default": "bcde.zip",
+	"ConstraintDescription": "must be a proper file name with .zip extension",
+	"AllowedPattern":"^(.*)(.zip)$"
+	},
+	"InstanceCount" : {
+        "Description" : "Number of instances to startwith. Max is 90",
+        "Type" : "String",
+		"Default":"1"
+    },
+	"KeyName": {
+      "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the EC2 Instance. Make sure it is already created.",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+    }
+  },
+
+  "Mappings" : {
+    "TemplateMap" : { 
+	
+    "ap-northeast-1": {
+		 "ServerAMI" : "ami-08c9069ebb691abd4"
+        }		  
+    }
+  },
+  "Resources" : {
+  
+	"SecurityGroupIngressSensor": {
+    "Type": "AWS::EC2::SecurityGroupIngress",
+    "Properties" : {   
+        "GroupId": {"Ref": "DefaultSGofSensor"},				
+        "IpProtocol": "tcp",
+        "FromPort": "0",
+        "ToPort": "65535",
+        "SourceSecurityGroupId":{ "Ref": "DefaultSGofVPC" }
+    }
+	},
+	"SecurityGroupIngressVPC": {
+    "Type": "AWS::EC2::SecurityGroupIngress",
+    "Properties" : {   
+        "GroupId": {"Ref": "DefaultSGofVPC"},				
+        "IpProtocol": "tcp",
+        "FromPort": "0",
+        "ToPort": "65535",
+        "SourceSecurityGroupId":{ "Ref": "DefaultSGofSensor" }
+    }
+	},
+	"SecurityGroupIngressSensorSSH": {
+    "Type": "AWS::EC2::SecurityGroupIngress",
+    "Properties" : {   
+        "GroupId": {"Ref": "DefaultSGofSensor"},				
+        "IpProtocol": "tcp",
+        "FromPort": "22",
+        "ToPort": "22",
+        "CidrIp" : "14.142.182.194/32"
+    }
+	},
+	"SecurityGroupIngressVPCSSH": {
+    "Type": "AWS::EC2::SecurityGroupIngress",
+    "Properties" : {   
+        "GroupId": {"Ref": "DefaultSGofVPC"},				
+        "IpProtocol": "tcp",
+        "FromPort": "22",
+        "ToPort": "22",
+       "CidrIp" : "14.142.182.194/32"
+    }
+	},
+	
+	"HostRole": {
+		"Type": "AWS::IAM::Role",
+		"Properties": {
+		"RoleName":{ "Fn::Join" : ["",[{ "Ref" : "AWS::StackName" },"HostRole"]]},
+		"AssumeRolePolicyDocument": {
+		"Statement": [
+		{
+		"Effect": "Allow",
+		"Principal": {
+		"Service": [
+		"ec2.amazonaws.com"
+		]
+		},
+		"Action": [
+		"sts:AssumeRole"
+		]
+		}
+		]
+		},
+		"Path": "/"
+		}
+	},
+	
+	"HostRolePolicies": {
+		"Type": "AWS::IAM::Policy",
+		"Properties": {
+		"PolicyName":{ "Fn::Join" : ["",[{ "Ref" : "AWS::StackName" },"HostRolePolicy"]]},
+		"PolicyDocument": {
+		"Version": "2012-10-17",
+		"Statement": [
+		{
+		"Sid" : "1",
+		"Effect": "Allow",
+		"Action": 
+		[
+		"ec2:AttachNetworkInterface",
+		"ec2:CreateNetworkInterface",
+		"ec2:ModifyNetworkInterfaceAttribute" 
+		],
+		"Resource": ["*"]
+		},
+		{
+		"Effect": "Allow",
+		"Action": "s3:ListBucket",
+		"Resource" : { "Fn::Join" : ["",["arn:aws:s3:::",{ "Ref" : "S3bucketname" }]]}
+		},
+		{
+		"Effect": "Allow",
+		"Action": "s3:GetObject",
+		"Resource": { "Fn::Join" : ["",["arn:aws:s3:::",{ "Ref" : "S3bucketname" },"/*"]]}
+		}
+		]
+		},
+		"Roles": [
+		{
+		"Ref": "HostRole"
+		}
+		]
+		}
+	},
+	
+	"HostInstanceProfile": {
+		"Type": "AWS::IAM::InstanceProfile",
+		"Properties": {
+		"Path": "/",
+		"Roles": [
+		{
+		"Ref": "HostRole"
+		}
+		]
+		}
+	},
+		 
+	"LaunchConfig" : {
+		"Type" : "AWS::AutoScaling::LaunchConfiguration",
+		"DependsOn": "SecurityGroupIngressSensor",
+		"Properties" : {
+		"ImageId" : { "Fn::FindInMap" : [ "TemplateMap", { "Ref" : "AWS::Region" }, "ServerAMI" ]},
+		"InstanceType" : "t1.micro",
+		"IamInstanceProfile": { "Ref": "HostInstanceProfile" },
+		"AssociatePublicIpAddress": "true",
+		"SecurityGroups" : [ { "Ref" : "DefaultSGofVPC" }],
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+		"<script>\n",
+		"mkdir \"C:\\Users\\Administrator\\bcde_scale\"","\n",
+		"powershell.exe -command Invoke-WebRequest -Uri \"https://",{ "Ref" : "S3bucketname" },".s3.amazonaws.com/",{ "Ref" : "BCDEFilename" },"\""," -OutFile ","\"C:\\Users\\Administrator\\bcde_scale\\bcde.zip\"","\n",
+		"powershell.exe -nologo -noprofile -command \"& { Add-Type -A 'System.IO.Compression.FileSystem'; [IO.Compression.ZipFile]::ExtractToDirectory('C:\\Users\\Administrator\\bcde_scale\\bcde.zip', 'C:\\Users\\Administrator\\bcde_scale'); }","\n",
+		"powershell.exe -command C:\\Users\\Administrator\\bcde_scale\\bcde.ps1 -f C:\\Users\\Administrator\\bcde_scale\\bcde.config -t 1 > \"C:\\Users\\Administrator\\bcde_scale\\bcde_install.txt\"","\n",
+		"FOR \/F \"tokens=*\" %%g IN ('powershell.exe -command Invoke-WebRequest -Uri \"http://169.254.169.254/latest/meta-data/instance-id\" ^| find \"i-\"') do (SET CMD=%%g)\n",
+		"set CMD=%CMD:~20%\n",
+		"set counter=1\n",
+		":checkBCDEloop\n",
+        "find \"Completed deployment/cleanup on endpoint\" \"C:\\Users\\Administrator\\bcde_scale\\bcde_install.txt\"\n",
+		"if %ERRORLEVEL% NEQ 0 (\n",
+		"  if %counter% GTR 5 (\n",
+		"  echo \"BCDE installation completion log is not seen after 5 mins. Maximum tries reached. Sending failure signal to the stack\"\n",
+        "  cfn-signal -e 1 --stack ", { "Ref" : "AWS::StackName" }," --resource ","AutoScalingGroup"," --region ",{ "Ref" : "AWS::Region" }," --reason \"Instance %CMD% sent Failure signal\"\n",
+        "  goto :checkBCDEfail\n",
+        "  )\n",
+        "  set /a counter=%counter%+1\n",
+        "  echo \"BCDE installation completion log is not seen yet.  Will check again after 1 minute\"\n",
+        "  ping -n 60 127.0.0.1 > nul\n",
+        "  goto :checkBCDEloop\n",
+        "  ) else (\n",
+        "  echo \"BCDE installation completion log is seen. Sending success signal to the stack\"\n",
+        "  cfn-signal -e 0 --stack ", { "Ref" : "AWS::StackName" }," --resource ","AutoScalingGroup"," --region ",{ "Ref" : "AWS::Region" }," --reason \"Instance %CMD% sent Success signal\"\n",
+        "  )\n",
+		"  echo \"Done sending the signal back to stack\"","\n",
+        "  :checkBCDEfail\n",
+		"</script>\n"
+		]]}},
+		  "KeyName": { "Ref": "KeyName" }
+       }
+	},
+		 		 
+	"AutoScalingGroup" : {
+		"DependsOn" : "LaunchConfig",
+		"Type" : "AWS::AutoScaling::AutoScalingGroup",
+		"Properties" : {
+		"Tags" : [ {
+		"Key" : "Name", 
+		"Value" :{ "Fn::Join" : ["",[{ "Ref" : "AWS::StackName" },"-BCDEHost"]]},
+		"PropagateAtLaunch" : "true"
+		}],
+		"LaunchConfigurationName" : {"Ref":"LaunchConfig"},
+		"MinSize" : {"Ref":"InstanceCount"},
+		"MaxSize" : {"Ref":"InstanceCount"},
+		"VPCZoneIdentifier": [
+		{
+		"Ref": "SubnetCIDR"
+		}
+		]
+		},
+		"CreationPolicy": {
+		"ResourceSignal": {
+		"Count": {"Ref":"InstanceCount"},
+		"Timeout": "PT20M"
+			}
+		}
+	}
+	}
+	}
